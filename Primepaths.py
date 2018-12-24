@@ -30,20 +30,26 @@ class Cities(object):
                 continue
     
             id = int(each_city[0])
-            self.X.append(float(each_city[1]))
-            self.Y.append(float(each_city[2]))
+            self.X.append(round(float(each_city[1]), 4))
+            self.Y.append(round(float(each_city[2]), 4))
             index += 1
             if (index % 1000 == 0):
                 print("%d read\r" % index, end='')
 
         self.sorted_X = np.argsort(self.X)
         self.sorted_Y = np.argsort(self.Y)
-        self.grid_size = 24
+        self.grid_size = 15
         self.max_x = 5100
-        self.max_y = 3400
+        self.max_y = 3405
         
         self.right_x = self.max_x // self.grid_size
+        if (self.max_x % self.grid_size != 0):
+            self.right_x += 1
+        
         self.top_y = self.max_y // self.grid_size
+        if (self.max_y % self.grid_size != 0):
+            self.top_y += 1
+        
         self.grid0_x = self.X[0] // self.grid_size
         self.grid0_y = self.Y[0] // self.grid_size
 
@@ -221,13 +227,40 @@ class Cities(object):
         return
     
     def get_cities_in_grid_bin(self, city_axis, sorted_city, left, right, grid_axis):
-        if (left >= right):
+        if (city_axis[sorted_city[left]] == grid_axis):
             return left
+        
+        if (city_axis[sorted_city[right]] == grid_axis):
+            return right
+
+        if (city_axis[sorted_city[left]] > grid_axis):
+            if (left == 0):
+                return 0
+            
+            for i in range(left, -1, -1):
+                if (city_axis[sorted_city[i]] >= grid_axis and 
+                    city_axis[sorted_city[i - 1]] < grid_axis):
+                    return i
+
+            print("%s grid axis %f is not between [%d(%f), %d (%f)]" % 
+                  (getCurrentTime(), grid_axis, left, city_axis[sorted_city[left]], right, city_axis[sorted_city[right]]))
+            exit(1)
+            
+        if (city_axis[sorted_city[right]] < grid_axis):
+            for i in range(right, len(sorted_city)):
+                if (city_axis[sorted_city[i]] < grid_axis and 
+                    city_axis[sorted_city[i + 1]] >= grid_axis):
+                    return i + 1
+
+            print("%s grid axis %f is not between [%d(%f), %d (%f)]" % 
+                  (getCurrentTime(), grid_axis, left, city_axis[sorted_city[left]], right, city_axis[sorted_city[right]]))
+            exit(1)
+                
 
         if (city_axis[sorted_city[left]] < grid_axis and 
             city_axis[sorted_city[left + 1]] >= grid_axis):
             return left + 1
-        
+
         mid = (left + right) // 2 
         grid_mid = city_axis[sorted_city[mid]]
         if (grid_mid == grid_axis):
@@ -244,13 +277,13 @@ class Cities(object):
         
         first_city_idx = self.get_cities_in_grid_bin(self.X, self.sorted_X, 0, len(self.sorted_X) - 1, grid_left)
         for idx in range(first_city_idx, len(self.sorted_X)):
-            if (self.X[self.sorted_X[idx]] > grid_left + self.grid_size):
+            if (self.X[self.sorted_X[idx]] >= grid_left + self.grid_size):
                 break
             cities_around_x.add(self.sorted_X[idx])
             
         first_city_idx = self.get_cities_in_grid_bin(self.Y, self.sorted_Y, 0, len(self.sorted_Y) - 1, grid_bottom)
         for idx in range(first_city_idx, len(self.sorted_Y)):
-            if (self.Y[self.sorted_Y[idx]] > grid_bottom + self.grid_size):
+            if (self.Y[self.sorted_Y[idx]] >= grid_bottom + self.grid_size):
                 break
             cities_around_y.add(self.sorted_Y[idx])
 
@@ -262,47 +295,54 @@ class Cities(object):
     
     def find_path_with_grid(self):
         
+        start = time.clock()
+        
         move_file = open(r'%s/../output/city_grid_move_%d_%s.csv' % (runningPath, self.grid_size, datetime.datetime.now().strftime('%Y%m%d_%H%M%S')), 'w')
         move_file.write("Path\n0\n")
         
-        grid_path_x, grid_path_y = self.get_grid_path()
+        grid_path_x, grid_path_y = self.get_grid_path2()
         
-        print("%s total grids %d" % (getCurrentTime(), len(grid_path_x)))
+        print("%s find_path_with_grid is running, total grids %d" % (getCurrentTime(), len(grid_path_x)))
 
         shortest_city_move = [0]
         city_move_list = [0, []]
 
         current_city = 0
-        
-        for grid_idx in range(0, len(grid_path_x)):
+
+        for grid_idx in range(0, len(grid_path_x)):            
             grid_left = grid_path_x[grid_idx]* self.grid_size
             grid_bottom = grid_path_y[grid_idx]* self.grid_size
+            
             cities_in_grid_list = self.get_cities_in_grid(grid_left, grid_bottom)
             if (len(cities_in_grid_list) == 0):
                 continue
-            
+
             N = len(cities_in_grid_list)
             print("%s grid %d has %d cities\r" % (getCurrentTime(), grid_idx, N), end='')
-            logging.info("%d,%d" % (grid_idx, N))
-            continue
-            
+#             logging.info("%d,%d" % (grid_idx, N))
+#             continue
+
             cities_x_in_grid = [self.X[current_city]]
             cities_y_in_grid = [self.Y[current_city]]
-            
+
             cities_x_in_grid.extend([self.X[city] for city in cities_in_grid_list])
             cities_y_in_grid.extend([self.Y[city] for city in cities_in_grid_list])
-            
+
             D = np.zeros((len(cities_x_in_grid), len(cities_x_in_grid)))
-             
+
             #计算距离矩阵
             for i in range(N + 1):
                 for j in range(N + 1):
                     D[i,j] = math.sqrt(pow(cities_x_in_grid[i]-cities_x_in_grid[j], 2) + pow(cities_y_in_grid[i]-cities_y_in_grid[j], 2))
-            
+
             dp = Solution(D, 0)
             shortest_move_dist = dp.tsp()
             path = dp.get_path()
             shortest_city_move = [cities_in_grid_list[i - 1] for i in path[1:-1]]
+            if (len(shortest_city_move) != N):
+                print("%s Error grid %d has %d cities, but %d in path, %d cities went" % 
+                      (getCurrentTime(), grid_idx, N, len(shortest_city_move), len(self.cities_passed_through)))
+                exit(0)
 
             self.cities_passed_through = self.cities_passed_through.union(set(shortest_city_move))
             current_city = shortest_city_move[-1]
@@ -312,9 +352,12 @@ class Cities(object):
             print("%s %d cities %d grids went, distance %f\r" % (getCurrentTime(), len(self.cities_passed_through), grid_idx, city_move_list[0]), end='')
             if (len(self.cities_passed_through) % 2000 == 0):
                 print("%s %d cities %d grids went, distance %f" % (getCurrentTime(), len(self.cities_passed_through), grid_idx, city_move_list[0]))
-                
+
             logging.info("%s %d cities have passed through, distance %f" % (getCurrentTime(), len(self.cities_passed_through), city_move_list[0]))
-        
+
+        end = time.clock()
+        print("%s find_path_with_grid finished, %d cities went, running time %s" % (getCurrentTime(), len(city_move_list[1]), end-start))
+
         for each_city in city_move_list[1]:
             move_file.write("%d\n" % each_city)
         
@@ -370,6 +413,7 @@ class Cities(object):
         ax.autoscale()
 
             
+    # 1938707
     def get_grid_path(self):
         grid_x = self.grid0_x
         grid_y = self.grid0_y
@@ -469,7 +513,70 @@ class Cities(object):
         print("grid_path len ", len(grid_path_x))
 
         return grid_path_x, grid_path_y
+    
+    def get_grid_path2(self):
+        grid_x = self.grid0_x
+        grid_y = self.grid0_y
+
+        grid_path_x = []
+        grid_path_y = []
         
+        # x0 右侧的点从左到右从下到上遍历， y0 = 0 的点从右到左遍历
+        while (grid_x < self.right_x): # 从左到右
+            while (grid_y > 0):  # 从下到上, 跳过第 0 行
+                grid_path_x.append(grid_x)
+                grid_path_y.append(grid_y)
+                grid_y -= 1
+
+            grid_x += 1
+            if (grid_x >= self.right_x):
+                break
+
+            grid_y = 1
+            while (grid_y < self.top_y):
+                grid_path_x.append(grid_x)
+                grid_path_y.append(grid_y)
+                grid_y += 1
+
+            grid_x += 1
+            grid_y = self.top_y - 1
+            
+        grid_y = 0
+        grid_x = self.right_x - 1
+        while (grid_x >= 0): # 第 0 行从右到左直到第 0 列
+            grid_path_x.append(grid_x)
+            grid_path_y.append(grid_y)
+            grid_x -= 1
+            
+        grid_x = 0
+        grid_y = 1
+        # [0, grid_x] 从左到右从下到上遍历
+        while (grid_x <= self.grid0_x):
+            while (grid_y < self.top_y):
+                grid_path_x.append(grid_x)
+                grid_path_y.append(grid_y)
+                grid_y += 1
+                
+            grid_x += 1
+            if (grid_x > self.grid0_x):
+                break
+            
+            grid_y = self.top_y - 1
+            while (grid_y > 0):
+                grid_path_x.append(grid_x)
+                grid_path_y.append(grid_y)
+                grid_y -= 1
+                if (grid_x == self.grid0_x and 
+                    grid_y == self.grid0_y):
+                    break
+                
+            grid_x += 1
+            grid_y = 1
+    
+        print("grid_path len ", len(grid_path_x))
+
+        return grid_path_x, grid_path_y
+            
 def main():
     max_city_aounds = int(sys.argv[1])
     around_x_len = int(sys.argv[2])
@@ -480,7 +587,7 @@ def main():
 #     cities.find_path()    
     
 #     cities.draw_move(grid_path_x, grid_path_y)
-#     cities.verify_submition("city_grid_move_10.csv")
+#     cities.verify_submition("city_grid_move_15_20181221_163408.csv")
     
     return
 
